@@ -7,17 +7,32 @@ public enum IndexedEntryKind
     Folder,
     Executable,
     Shortcut,
+    SteamGame,
 }
 
 public sealed record IndexedEntry(string DisplayName, string FullPath, IndexedEntryKind Kind)
 {
+    // SteamGame のみ使用。appmanifest から読んだ appid（"steam://rungameid/<appid>" の起動に必要）。
+    public string? SteamAppId { get; init; }
+
+    // SteamGame のみ使用。Steam のライブラリキャッシュ (appcache\librarycache) 内で見つかった
+    // アイコン画像への実パス。見つからなければ null（IconProvider が FullPath へのフォールバックを試みる）。
+    public string? IconOverridePath { get; init; }
+
     public string Tag => Kind switch
     {
         IndexedEntryKind.Folder => "DIR",
         IndexedEntryKind.Executable => "EXE",
         IndexedEntryKind.Shortcut => "LNK",
+        IndexedEntryKind.SteamGame => "STEAM",
         _ => "",
     };
+
+    // SteamGame は FullPath を「インストール先フォルダ」（フォルダを開く機能・使用回数記録のキーに使う実パス）
+    // に使うため、実際の起動には別途 steam:// URI が必要。それ以外の種別は FullPath がそのまま起動対象。
+    public string LaunchTarget => Kind == IndexedEntryKind.SteamGame && SteamAppId is not null
+        ? $"steam://rungameid/{SteamAppId}"
+        : FullPath;
 }
 
 /// <summary>

@@ -15,6 +15,7 @@ public sealed class ResultItem : INotifyPropertyChanged
     public string DisplayName => _entry.DisplayName;
     public string Tag => _entry.Tag;
     public string FullPath => _entry.FullPath;
+    public string LaunchTarget => _entry.LaunchTarget;
 
     public ImageSource? Icon
     {

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
@@ -65,7 +66,7 @@ public static class IconProvider
                 return cached;
             }
 
-            var icon = LoadIcon(entry.FullPath, isFolder);
+            var icon = LoadIcon(entry, isFolder);
             if (icon is not null)
             {
                 Cache[cacheKey] = icon;
@@ -79,7 +80,43 @@ public static class IconProvider
         }
     }
 
-    private static ImageSource? LoadIcon(string path, bool isFolder)
+    private static ImageSource? LoadIcon(IndexedEntry entry, bool isFolder)
+    {
+        // Steam ゲームは FullPath がインストール先フォルダ（実行ファイルではない）なので、
+        // SHGetFileInfo に頼るとただのフォルダアイコンになってしまう。Steam のライブラリキャッシュに
+        // 実際のゲームアイコン画像が見つかっていれば、そちらを直接読み込んで使う。
+        if (entry.IconOverridePath is { } overridePath && File.Exists(overridePath))
+        {
+            var image = LoadImageFile(overridePath);
+            if (image is not null)
+            {
+                return image;
+            }
+        }
+
+        return LoadShellIcon(entry.FullPath, isFolder);
+    }
+
+    private static ImageSource? LoadImageFile(string path)
+    {
+        try
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(path);
+            bitmap.DecodePixelWidth = 32;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (Exception ex) when (ex is NotSupportedException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static ImageSource? LoadShellIcon(string path, bool isFolder)
     {
         var info = new SHFILEINFO();
         var flags = SHGFI_ICON | SHGFI_SMALLICON;

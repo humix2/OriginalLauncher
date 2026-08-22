@@ -316,6 +316,7 @@ public partial class MainWindow : Window
     private static int KindRank(IndexedEntryKind kind) => kind switch
     {
         IndexedEntryKind.Executable => 0,
+        IndexedEntryKind.SteamGame => 0,
         IndexedEntryKind.Shortcut => 1,
         IndexedEntryKind.Folder => 2,
         _ => 3,
@@ -340,8 +341,7 @@ public partial class MainWindow : Window
 
     private void RebuildIndex()
     {
-        _index = new FileIndexer(_config).BuildIndex();
-        IndexStore.Save(IndexStore.DefaultPath, _index);
+        _index = BuildFullIndex();
         QueryBox.Clear();
     }
 
@@ -352,28 +352,49 @@ public partial class MainWindow : Window
     /// </summary>
     public void ReloadFromConfig()
     {
-        _index = new FileIndexer(_config).BuildIndex();
-        IndexStore.Save(IndexStore.DefaultPath, _index);
+        _index = BuildFullIndex();
+    }
+
+    /// <summary>
+    /// ファイル/フォルダのインデックスと Steam のインストール済みゲームを合わせて作り直し、
+    /// index.json（ファイル/フォルダ側のみ）を更新する。
+    /// </summary>
+    private IReadOnlyList<IndexedEntry> BuildFullIndex()
+    {
+        var fileEntries = new FileIndexer(_config).BuildIndex();
+        IndexStore.Save(IndexStore.DefaultPath, fileEntries);
+        return MergeWithSteam(fileEntries);
     }
 
     /// <summary>
     /// キャッシュ (index.json) があれば読み込むだけで済ませ、起動のたびに全ドライブを
     /// 再走査しない。キャッシュが無い（初回起動、または index.json を消した場合）ときだけ
     /// バックグラウンドで実際の走査を行い、その間だけ通知を出す。
+    /// Steam のゲーム検出はレジストリ+数個のテキストファイル読み取りだけで軽いため、
+    /// ファイル側のキャッシュ有無に関わらず毎回その場で（バックグラウンドスレッドで）読み直す。
     /// </summary>
     private async Task LoadIndexAsync()
     {
         var cached = IndexStore.TryLoad(IndexStore.DefaultPath);
         if (cached is not null)
         {
-            _index = cached;
+            _index = await Task.Run(() => MergeWithSteam(cached));
             return;
         }
 
         _showNotice?.Invoke("初回起動のためインデックスを作成しています…（完了までしばらくお待ちください）");
-        var built = await Task.Run(() => new FileIndexer(_config).BuildIndex());
-        _index = built;
-        IndexStore.Save(IndexStore.DefaultPath, built);
+        _index = await Task.Run(() =>
+        {
+            var fileEntries = new FileIndexer(_config).BuildIndex();
+            IndexStore.Save(IndexStore.DefaultPath, fileEntries);
+            return MergeWithSteam(fileEntries);
+        });
+    }
+
+    private static IReadOnlyList<IndexedEntry> MergeWithSteam(IReadOnlyList<IndexedEntry> fileEntries)
+    {
+        var steamEntries = SteamLibraryScanner.BuildIndex();
+        return steamEntries.Count == 0 ? fileEntries : [.. fileEntries, .. steamEntries];
     }
 
     private void OpenSearchShortcut(SearchShortcutConfig shortcut, string query)
@@ -400,7 +421,7 @@ public partial class MainWindow : Window
 
         try
         {
-            Process.Start(new ProcessStartInfo(item.FullPath) { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(item.LaunchTarget) { UseShellExecute = true });
         }
         catch (Win32Exception)
         {

@@ -1,6 +1,6 @@
 # TODO / メモ
 
-最終更新: 2026-08-21
+最終更新: 2026-08-23
 
 ## 現状
 
@@ -62,6 +62,25 @@ UI Automation でクリア自体（論理的な状態）が再表示直後に空
 
 修正: [IndexStore.cs](src/OriginalLauncher/IndexStore.cs) を新設し、走査結果を `%AppData%\OriginalLauncher\index.json` に永続化。次回起動時はまずこのキャッシュを読み込むだけで済ませ（走査しない）、キャッシュが無い場合（初回起動、または index.json を削除した場合）のみバックグラウンドスレッドで実際の走査を行い、その間はトレイアイコンのバルーンチップで「初回起動のためインデックスを作成しています…」と通知する。`_index` は起動時点では空リストで即座に返し、読み込み/走査は非同期（`LoadIndexAsync`）で行うため、起動自体（ホットキー登録・トレイアイコン表示）はブロックしない。`/s`（手動再構築）・設定画面保存後の `ReloadFromConfig()` は引き続き同期的に再走査するが、その都度 `index.json` も更新するようにした。
 実際に index.json が無い状態と有る状態の両方で起動し、無い場合はバックグラウンドで作成されること、有る場合は即座に検索できることを自動検証済み。
+
+### Steam ゲームの検索対応 (2026-08-23)
+
+要望: Raycast の「Steam のゲームを検索・起動できる」機能を持ち込みたい。「steam://rungameid/333640」のような URI がどこから来ているか（フォルダ走査ではなさそう）という疑問から着手。
+
+仕組み: Steam はインストール済みゲームをフォルダ走査ではなくメタデータファイルで管理している。
+
+1. レジストリ (`HKCU\Software\Valve\Steam` の `SteamPath`) から Steam 本体のインストール先を特定
+2. `<Steam>\steamapps\libraryfolders.vdf`（VDF = Valve 独自のネスト key-value テキスト形式）でゲームを分散インストールできるライブラリフォルダ（別ドライブ等）の一覧を取得
+3. 各ライブラリの `steamapps\appmanifest_<appid>.acf` から appid・表示名・installdir を読む（フルパーサーは実装せず、フラットな `"key" "value"` ペアを正規表現で拾うだけで十分）
+4. `steam://rungameid/<appid>` は Steam がインストール時に登録するプロトコルハンドラ (`HKCR\steam`) 経由で起動される URI
+
+実装: [SteamLibraryScanner.cs](src/OriginalLauncher/SteamLibraryScanner.cs) を新設し、上記の手順でインストール済みゲーム一覧を `IndexedEntry` に変換する。既存の `IndexedEntryKind` に `SteamGame` を追加し、`IndexedEntry` に `SteamAppId`（起動用）・`IconOverridePath`（アイコン用）・`LaunchTarget`（`SteamGame` なら `steam://rungameid/<appid>`、それ以外は従来通り `FullPath`）を追加。`FullPath` 自体は実際のインストール先フォルダ（`steamapps\common\<installdir>`）にしているため、既存の「フォルダを開く」(Ctrl+Enter)・使用回数ランキングの仕組みがそのまま流用できる。`MainWindow` の `LoadIndexAsync`/`RebuildIndex`/`ReloadFromConfig` で `FileIndexer` の結果と毎回マージする（Steam 側はレジストリ+数個のテキストファイル読み取りだけで軽いため `index.json` にはキャッシュせず毎回読み直す）。
+
+アイコン: 現行 Steam は `appcache\librarycache\<appid>\` 配下に `header.jpg`/`library_600x900.jpg`/`logo.png` 等の決まった名前のプロモーション画像と一緒に、40桁16進ハッシュ名の `.jpg` を1つだけ置いており、それが実際の小さいゲームアイコン。命名の出どころ（`appinfo.vdf`、バイナリ形式）はパースせず、拡張子とハッシュらしい名前の形だけで判別している。旧 Steam のフラットな `<appid>_icon.jpg` 形式もフォールバックとして残した。見つかった画像は `IconProvider` で `SHGetFileInfo` を経由せず `BitmapImage` で直接読み込む（`SHGetFileInfo` は実ファイルの関連付けアイコンしか返せず、jpg の中身は見てくれないため）。
+
+検証: 実機の Steam ライブラリ（2ライブラリ、Steamworks Common Redistributables 込みで約80件）に対してスキャナー単体を実行し、appid・表示名・インストール先・アイコンパス・起動 URI がすべて正しく解決されることを確認済み（例: `333640` → `Caves of Qud`、質問のきっかけになった appid と一致）。フルビルド（0 エラー・0 警告）も確認済み。ポップアップ UI 経由の end-to-end 確認は、この環境だと自動化した合成キー入力がフォアグラウンド化に失敗し別ウィンドウに漏れる問題があり見送った（実機での手動確認を推奨）。
+
+既知の制限: appmanifest は「実際にプレイするゲーム」以外（Steamworks Common Redistributables のような共有ランタイム、デモ版、ツール等）も区別なく列挙する。厳密な分類には `appinfo.vdf`（バイナリ形式のアプリ種別情報）のパースが必要になるため、今回は対象外とした。
 
 ## 未着手・気になっている点
 
