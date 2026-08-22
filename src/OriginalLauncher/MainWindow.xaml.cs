@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Threading;
 
 namespace OriginalLauncher;
@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _foregroundWatcher;
     private readonly DispatcherTimer _searchDebounce;
     private readonly Action? _openSettings;
+    private readonly Action<string>? _showNotice;
     private IReadOnlyList<IndexedEntry> _index;
     private DateTime _shownAtUtc;
 
@@ -35,20 +36,27 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    private static readonly uint CurrentProcessId = (uint)Environment.ProcessId;
+
     public bool AllowClose { get; set; }
 
     public MainWindow() : this(null, new LauncherConfig(), new UsageStore(UsageStore.DefaultPath), null)
     {
     }
 
-    public MainWindow(MigemoService? migemo, LauncherConfig config, UsageStore usage, Action? openSettings)
+    public MainWindow(MigemoService? migemo, LauncherConfig config, UsageStore usage, Action? openSettings, Action<string>? showNotice = null)
     {
         InitializeComponent();
         _migemo = migemo;
         _config = config;
         _usage = usage;
         _openSettings = openSettings;
-        _index = new FileIndexer(_config).BuildIndex();
+        _showNotice = showNotice;
+        _index = [];
+        _ = LoadIndexAsync();
 
         _commands.RegisterExact("/s", RebuildIndex);
         if (_openSettings is not null)
@@ -61,14 +69,21 @@ public partial class MainWindow : Window
         // 定期的にポーリングし、実際に前面でなくなったら閉じる（OS の生の状態を直接見る）。
         // 表示直後は ForceActivate の前面化がまだ確定していないことがあるため、
         // 表示から一定時間は判定をスキップする猶予期間を設ける。
+        // 前面ウィンドウのハンドルを MainWindow 自身の Handle と比較すると、右クリックの
+        // コンテキストメニューのような「自プロセス内の別ウィンドウ」に前面が移った瞬間も
+        // 「他アプリに切り替わった」と誤判定してポップアップごと閉じてしまう
+        // （メニューが開いた直後に消える不具合の原因）。前面ウィンドウの所有プロセスIDで比較し、
+        // 自プロセス内の別ウィンドウ（コンテキストメニュー等）は前面が移っても閉じないようにする。
         _foregroundWatcher = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         _foregroundWatcher.Tick += (_, _) =>
         {
-            if (IsVisible
-                && DateTime.UtcNow - _shownAtUtc > ForegroundGracePeriod
-                && GetForegroundWindow() != new WindowInteropHelper(this).Handle)
+            if (IsVisible && DateTime.UtcNow - _shownAtUtc > ForegroundGracePeriod)
             {
-                HidePopup();
+                GetWindowThreadProcessId(GetForegroundWindow(), out var foregroundProcessId);
+                if (foregroundProcessId != CurrentProcessId)
+                {
+                    HidePopup();
+                }
             }
         };
 
@@ -157,6 +172,10 @@ public partial class MainWindow : Window
                     {
                         OpenSearchShortcut(_armedShortcut, QueryBox.Text);
                     }
+                }
+                else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    OpenContainingFolderForSelected();
                 }
                 else if (!_commands.TryExecute(QueryBox.Text))
                 {
@@ -248,17 +267,22 @@ public partial class MainWindow : Window
             }
         }
 
-        // 表示名+種別が同じもの（別ルートに同名のショートカット/フォルダがあるケース）は
+        // 表示名+種別+ドライブが同じもの（別ルートに同名のショートカット/フォルダがあるケース）は
         // グループ内で最も使われている/最近使ったものを代表として1件にまとめる。
         // 使用回数が多いもの、同数なら最近使ったものを優先する。未使用のものは既存の走査順のまま後ろに残る。
+        // 種別 (Kind) は .lnk と .exe を区別するため、名前が同じでも別項目として扱われる。
+        // ドライブを含めるのは、C:\ と D:\ に同名の別ファイルがある場合を誤って統合しないため。
+        // 使用回数・最終使用日時が同率の場合は、実行ファイル (.exe) > ショートカット (.lnk) > フォルダ
+        // の優先順位にする。基本的に実行対象を示した方が使いやすいため。
         var ranked = matches
-            .GroupBy(entry => (Name: entry.DisplayName.ToLowerInvariant(), entry.Kind))
+            .GroupBy(entry => (Name: entry.DisplayName.ToLowerInvariant(), entry.Kind, Drive: Path.GetPathRoot(entry.FullPath)))
             .Select(group => group
                 .OrderByDescending(entry => _usage.GetCount(entry.FullPath))
                 .ThenByDescending(entry => _usage.GetLastUsedUtc(entry.FullPath))
                 .First())
             .OrderByDescending(entry => _usage.GetCount(entry.FullPath))
             .ThenByDescending(entry => _usage.GetLastUsedUtc(entry.FullPath))
+            .ThenBy(entry => KindRank(entry.Kind))
             .Take(_config.MaxResults);
 
         foreach (var entry in ranked)
@@ -271,6 +295,14 @@ public partial class MainWindow : Window
             ResultsList.SelectedIndex = 0;
         }
     }
+
+    private static int KindRank(IndexedEntryKind kind) => kind switch
+    {
+        IndexedEntryKind.Executable => 0,
+        IndexedEntryKind.Shortcut => 1,
+        IndexedEntryKind.Folder => 2,
+        _ => 3,
+    };
 
     private void ResultsList_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
@@ -292,6 +324,7 @@ public partial class MainWindow : Window
     private void RebuildIndex()
     {
         _index = new FileIndexer(_config).BuildIndex();
+        IndexStore.Save(IndexStore.DefaultPath, _index);
         QueryBox.Clear();
     }
 
@@ -303,6 +336,27 @@ public partial class MainWindow : Window
     public void ReloadFromConfig()
     {
         _index = new FileIndexer(_config).BuildIndex();
+        IndexStore.Save(IndexStore.DefaultPath, _index);
+    }
+
+    /// <summary>
+    /// キャッシュ (index.json) があれば読み込むだけで済ませ、起動のたびに全ドライブを
+    /// 再走査しない。キャッシュが無い（初回起動、または index.json を消した場合）ときだけ
+    /// バックグラウンドで実際の走査を行い、その間だけ通知を出す。
+    /// </summary>
+    private async Task LoadIndexAsync()
+    {
+        var cached = IndexStore.TryLoad(IndexStore.DefaultPath);
+        if (cached is not null)
+        {
+            _index = cached;
+            return;
+        }
+
+        _showNotice?.Invoke("初回起動のためインデックスを作成しています…（完了までしばらくお待ちください）");
+        var built = await Task.Run(() => new FileIndexer(_config).BuildIndex());
+        _index = built;
+        IndexStore.Save(IndexStore.DefaultPath, built);
     }
 
     private void OpenSearchShortcut(SearchShortcutConfig shortcut, string query)
@@ -338,5 +392,79 @@ public partial class MainWindow : Window
 
         _usage.RecordLaunch(item.FullPath);
         HidePopup();
+    }
+
+    private void OpenContainingFolderForSelected()
+    {
+        if (ResultsList.SelectedItem is not ResultItem item)
+        {
+            return;
+        }
+
+        // /select, は「対象を含むフォルダを開いて対象自体をハイライトする」動作になるため、
+        // フォルダ・ファイルどちらの種別でも同じ呼び出しで意図通りに機能する。
+        // explorer.exe は CommandLineToArgvW 準拠の引数解釈をしないため、ArgumentList 経由だと
+        // "/select,パス" 全体が丸ごとクォートされてしまい正しく認識されない（既定のフォルダにフォールバックする）。
+        // "/select," の直後だけをクォートする生の Arguments 文字列として渡す必要がある。
+        var psi = new ProcessStartInfo("explorer.exe")
+        {
+            Arguments = $"/select,\"{item.FullPath}\"",
+        };
+        try
+        {
+            Process.Start(psi);
+        }
+        catch (Win32Exception)
+        {
+            return;
+        }
+
+        HidePopup();
+    }
+
+    // ListBox.ContextMenu は項目単位ではなくリスト全体に1つだけ設定しているため、
+    // 開く直前にマウス位置から対象の ListBoxItem をヒットテストして選択状態にする。
+    // （ItemContainerStyle + PreviewMouseRightButtonDown で項目ごとに ContextMenu を
+    // 持たせる方式も試したが、この透過/最前面のボーダレスウィンドウ上ではマウスの
+    // キャプチャ/ルーティングと干渉するのか、右クリックしてもメニューが一切開かない
+    // 事象が発生したため、ListBox 標準の ContextMenuOpening を使う方式に変更した。）
+    private void ResultsList_ContextMenuOpening(object sender, System.Windows.Controls.ContextMenuEventArgs e)
+    {
+        var point = Mouse.GetPosition(ResultsList);
+        var hit = System.Windows.Media.VisualTreeHelper.HitTest(ResultsList, point);
+        var container = hit is null ? null : FindAncestor<System.Windows.Controls.ListBoxItem>(hit.VisualHit);
+        if (container is null)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        container.IsSelected = true;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
+    {
+        var current = start;
+        while (current is not null)
+        {
+            if (current is T match)
+            {
+                return match;
+            }
+
+            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+        }
+
+        return null;
+    }
+
+    private void OpenMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        LaunchSelected();
+    }
+
+    private void OpenFolderMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        OpenContainingFolderForSelected();
     }
 }

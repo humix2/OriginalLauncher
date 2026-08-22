@@ -26,11 +26,9 @@ public partial class App : Application
         _migemoService = TryCreateMigemoService();
 
         _config = LauncherConfig.LoadOrCreateDefault(LauncherConfig.DefaultPath);
-        var usage = new UsageStore(UsageStore.DefaultPath);
-        _mainWindow = new MainWindow(_migemoService, _config, usage, OpenSettings);
 
-        InstallHotkey();
-
+        // インデックス読み込み中の通知 (ShowNotice) がバルーンチップを使うため、
+        // MainWindow より先にトレイアイコンを用意しておく。
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico");
         _appIcon = File.Exists(iconPath) ? new System.Drawing.Icon(iconPath) : System.Drawing.SystemIcons.Application;
 
@@ -42,6 +40,16 @@ public partial class App : Application
             ContextMenuStrip = BuildContextMenu(),
         };
         _notifyIcon.DoubleClick += (_, _) => TogglePopup();
+
+        var usage = new UsageStore(UsageStore.DefaultPath);
+        _mainWindow = new MainWindow(_migemoService, _config, usage, OpenSettings, ShowNotice);
+
+        InstallHotkey();
+    }
+
+    private void ShowNotice(string message)
+    {
+        _notifyIcon?.ShowBalloonTip(4000, "OriginalLauncher", message, ToolTipIcon.Info);
     }
 
     private void InstallHotkey()

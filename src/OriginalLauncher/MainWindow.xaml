@@ -16,6 +16,25 @@
         SizeToContent="Height"
         Width="640"
         PreviewKeyDown="Window_PreviewKeyDown">
+    <Window.Resources>
+        <Style TargetType="ContextMenu">
+            <Setter Property="Background" Value="#23262e" />
+            <Setter Property="BorderBrush" Value="#34363e" />
+            <Setter Property="Padding" Value="2" />
+        </Style>
+        <Style TargetType="MenuItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#f0efe9" />
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Padding" Value="10,5" />
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#2c2f38" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
     <Border Background="#1c1e24" BorderBrush="#34363e" BorderThickness="1" CornerRadius="10">
         <StackPanel>
             <Grid Margin="20,16">
@@ -61,7 +80,14 @@
                          BorderThickness="0"
                          MaxHeight="320"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                         MouseDoubleClick="ResultsList_MouseDoubleClick">
+                         MouseDoubleClick="ResultsList_MouseDoubleClick"
+                         ContextMenuOpening="ResultsList_ContextMenuOpening">
+                    <ListBox.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="開く (Enter)" Click="OpenMenuItem_Click" />
+                            <MenuItem Header="フォルダを開く (Ctrl+Enter)" Click="OpenFolderMenuItem_Click" />
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid Margin="20,8">
