@@ -246,24 +246,41 @@ public partial class MainWindow : Window
         ResultsList.Items.Clear();
 
         var query = QueryBox.Text;
-        if (string.IsNullOrWhiteSpace(query) || _migemo is null)
+        if (string.IsNullOrWhiteSpace(query))
         {
             return;
         }
 
-        var patternText = _migemo.GetRegexPattern(query);
-        if (string.IsNullOrEmpty(patternText))
-        {
-            return;
-        }
-
-        var regex = new Regex(patternText, RegexOptions.IgnoreCase);
         var matches = new List<IndexedEntry>();
-        foreach (var entry in _index)
+
+        // fenrir 由来の慣習: 先頭文字を大文字で打った時だけ migemo のかな/ローマ字あいまい展開を使う
+        // （"A" → "あ" 等も候補に含む）。先頭が小文字なら migemo を経由せず、入力文字列そのままの
+        // 部分一致で検索する（"a" は "あ" を含まない）。
+        if (char.IsUpper(query[0]) && _migemo is not null)
         {
-            if (regex.IsMatch(entry.DisplayName))
+            var patternText = _migemo.GetRegexPattern(query.ToLowerInvariant());
+            if (string.IsNullOrEmpty(patternText))
             {
-                matches.Add(entry);
+                return;
+            }
+
+            var regex = new Regex(patternText, RegexOptions.IgnoreCase);
+            foreach (var entry in _index)
+            {
+                if (regex.IsMatch(entry.DisplayName))
+                {
+                    matches.Add(entry);
+                }
+            }
+        }
+        else
+        {
+            foreach (var entry in _index)
+            {
+                if (entry.DisplayName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                {
+                    matches.Add(entry);
+                }
             }
         }
 
