@@ -63,6 +63,7 @@ public partial class SettingsWindow : Window
         ModShiftCheck.IsChecked = _config.Hotkey.Modifiers.Contains("Shift", StringComparer.OrdinalIgnoreCase);
         ModWindowsCheck.IsChecked = _config.Hotkey.Modifiers.Contains("Windows", StringComparer.OrdinalIgnoreCase);
         MaxResultsBox.Text = _config.MaxResults.ToString();
+        ResultFontFamilyBox.Text = _config.ResultFontFamily;
     }
 
     private void AddRootButton_Click(object sender, RoutedEventArgs e)
@@ -120,9 +121,17 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        var resultFontFamily = ResultFontFamilyBox.Text.Trim();
+        if (string.IsNullOrEmpty(resultFontFamily))
+        {
+            StatusText.Text = "検索結果一覧のフォントを入力してください。";
+            return;
+        }
+
         _config.Hotkey.Key = hotkeyKey;
         _config.Hotkey.Modifiers = BuildModifierList();
         _config.MaxResults = maxResults;
+        _config.ResultFontFamily = resultFontFamily;
 
         _config.Roots = Roots
             .Where(r => !string.IsNullOrWhiteSpace(r.Path))

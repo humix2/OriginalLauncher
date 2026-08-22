@@ -114,6 +114,11 @@
                 <TextBlock Text="最大表示件数" Style="{StaticResource SectionHeader}" />
                 <TextBox x:Name="MaxResultsBox" Width="80" HorizontalAlignment="Left" />
 
+                <TextBlock Text="検索結果一覧のフォント" Style="{StaticResource SectionHeader}" />
+                <TextBox x:Name="ResultFontFamilyBox" Width="240" HorizontalAlignment="Left" />
+                <TextBlock Text="表示名・種別タグに使うフォント名（例: BIZ UDPゴシック, Consolas, Meiryo UI）。未インストールのフォント名を指定した場合は OS のフォントフォールバックに任せます。"
+                           Foreground="{StaticResource InkFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
+
                 <TextBlock Text="検索ショートカット" Style="{StaticResource SectionHeader}" />
                 <DataGrid x:Name="ShortcutsGrid" Height="140" ItemsSource="{Binding SearchShortcuts}">
                     <DataGrid.Columns>

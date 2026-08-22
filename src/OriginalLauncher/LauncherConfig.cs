@@ -28,6 +28,10 @@ public sealed class LauncherConfig
     // 検索結果の最大表示件数。
     public int MaxResults { get; set; } = 20;
 
+    // 検索結果一覧（表示名・種別タグ）のフォント。既定は BIZ UDPゴシック（Windows 10 1809+ 標準搭載）。
+    // インストールされていないフォント名を指定した場合は WPF のフォントフォールバックに任せる。
+    public string ResultFontFamily { get; set; } = "BIZ UDPゴシック";
+
     // "/m" → GoogleMap 検索、"/a" → Amazon 検索のような、プレフィックス+検索語をURLに載せて
     // ブラウザで開くショートカット。fenrir 時代の運用を踏襲する。
     public List<SearchShortcutConfig> SearchShortcuts { get; set; } =

@@ -56,6 +56,7 @@ public partial class MainWindow : Window
         _openSettings = openSettings;
         _showNotice = showNotice;
         _index = [];
+        ApplyResultFont();
         _ = LoadIndexAsync();
 
         _commands.RegisterExact("/s", RebuildIndex);
@@ -352,7 +353,15 @@ public partial class MainWindow : Window
     /// </summary>
     public void ReloadFromConfig()
     {
+        ApplyResultFont();
         _index = BuildFullIndex();
+    }
+
+    // 検索結果一覧の表示名・種別タグは FontFamily を明示指定せず ResultsList から継承させているため、
+    // ここで一箇所だけ設定すれば両方に反映される。
+    private void ApplyResultFont()
+    {
+        ResultsList.FontFamily = new System.Windows.Media.FontFamily(_config.ResultFontFamily);
     }
 
     /// <summary>
