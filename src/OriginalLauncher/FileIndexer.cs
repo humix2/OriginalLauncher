@@ -8,6 +8,7 @@ public enum IndexedEntryKind
     Executable,
     Shortcut,
     SteamGame,
+    StoreApp,
 }
 
 public sealed record IndexedEntry(string DisplayName, string FullPath, IndexedEntryKind Kind)
@@ -15,7 +16,10 @@ public sealed record IndexedEntry(string DisplayName, string FullPath, IndexedEn
     // SteamGame のみ使用。appmanifest から読んだ appid（"steam://rungameid/<appid>" の起動に必要）。
     public string? SteamAppId { get; init; }
 
-    // SteamGame のみ使用。Steam のライブラリキャッシュ (appcache\librarycache) 内で見つかった
+    // StoreApp のみ使用。パッケージの AppUserModelId（"shell:AppsFolder\<AUMID>" の起動に必要）。
+    public string? AppUserModelId { get; init; }
+
+    // SteamGame / StoreApp で使用。それぞれ Steam ライブラリキャッシュ・AppxManifest から見つけた
     // アイコン画像への実パス。見つからなければ null（IconProvider が FullPath へのフォールバックを試みる）。
     public string? IconOverridePath { get; init; }
 
@@ -25,14 +29,19 @@ public sealed record IndexedEntry(string DisplayName, string FullPath, IndexedEn
         IndexedEntryKind.Executable => "EXE",
         IndexedEntryKind.Shortcut => "LNK",
         IndexedEntryKind.SteamGame => "STEAM",
+        IndexedEntryKind.StoreApp => "APP",
         _ => "",
     };
 
-    // SteamGame は FullPath を「インストール先フォルダ」（フォルダを開く機能・使用回数記録のキーに使う実パス）
-    // に使うため、実際の起動には別途 steam:// URI が必要。それ以外の種別は FullPath がそのまま起動対象。
-    public string LaunchTarget => Kind == IndexedEntryKind.SteamGame && SteamAppId is not null
-        ? $"steam://rungameid/{SteamAppId}"
-        : FullPath;
+    // SteamGame / StoreApp は FullPath を「インストール先フォルダ」（フォルダを開く機能・使用回数記録の
+    // キーに使う実パス）に使うため、実際の起動には別途 URI/シェル名前空間パスが必要。
+    // それ以外の種別は FullPath がそのまま起動対象。
+    public string LaunchTarget => Kind switch
+    {
+        IndexedEntryKind.SteamGame when SteamAppId is not null => $"steam://rungameid/{SteamAppId}",
+        IndexedEntryKind.StoreApp when AppUserModelId is not null => $"shell:AppsFolder\\{AppUserModelId}",
+        _ => FullPath,
+    };
 }
 
 /// <summary>

@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- インストール済み Store(MSIX) アプリの列挙 (Windows.Management.Deployment.PackageManager) に
+         Windows Runtime API 投影が必要なため、バージョン付き TFM を指定する。 -->
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>

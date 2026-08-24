@@ -318,6 +318,7 @@ public partial class MainWindow : Window
     {
         IndexedEntryKind.Executable => 0,
         IndexedEntryKind.SteamGame => 0,
+        IndexedEntryKind.StoreApp => 0,
         IndexedEntryKind.Shortcut => 1,
         IndexedEntryKind.Folder => 2,
         _ => 3,
@@ -365,21 +366,21 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// ファイル/フォルダのインデックスと Steam のインストール済みゲームを合わせて作り直し、
-    /// index.json（ファイル/フォルダ側のみ）を更新する。
+    /// ファイル/フォルダのインデックスと Steam のインストール済みゲーム・Store(MSIX) アプリを
+    /// 合わせて作り直し、index.json（ファイル/フォルダ側のみ）を更新する。
     /// </summary>
     private IReadOnlyList<IndexedEntry> BuildFullIndex()
     {
         var fileEntries = new FileIndexer(_config).BuildIndex();
         IndexStore.Save(IndexStore.DefaultPath, fileEntries);
-        return MergeWithSteam(fileEntries);
+        return MergeWithExternalScanners(fileEntries);
     }
 
     /// <summary>
     /// キャッシュ (index.json) があれば読み込むだけで済ませ、起動のたびに全ドライブを
     /// 再走査しない。キャッシュが無い（初回起動、または index.json を消した場合）ときだけ
     /// バックグラウンドで実際の走査を行い、その間だけ通知を出す。
-    /// Steam のゲーム検出はレジストリ+数個のテキストファイル読み取りだけで軽いため、
+    /// Steam のゲーム・Store アプリの検出はレジストリ/PackageManager 経由の軽い読み取りだけのため、
     /// ファイル側のキャッシュ有無に関わらず毎回その場で（バックグラウンドスレッドで）読み直す。
     /// </summary>
     private async Task LoadIndexAsync()
@@ -387,7 +388,7 @@ public partial class MainWindow : Window
         var cached = IndexStore.TryLoad(IndexStore.DefaultPath);
         if (cached is not null)
         {
-            _index = await Task.Run(() => MergeWithSteam(cached));
+            _index = await Task.Run(() => MergeWithExternalScanners(cached));
             return;
         }
 
@@ -396,14 +397,20 @@ public partial class MainWindow : Window
         {
             var fileEntries = new FileIndexer(_config).BuildIndex();
             IndexStore.Save(IndexStore.DefaultPath, fileEntries);
-            return MergeWithSteam(fileEntries);
+            return MergeWithExternalScanners(fileEntries);
         });
     }
 
-    private static IReadOnlyList<IndexedEntry> MergeWithSteam(IReadOnlyList<IndexedEntry> fileEntries)
+    private static IReadOnlyList<IndexedEntry> MergeWithExternalScanners(IReadOnlyList<IndexedEntry> fileEntries)
     {
         var steamEntries = SteamLibraryScanner.BuildIndex();
-        return steamEntries.Count == 0 ? fileEntries : [.. fileEntries, .. steamEntries];
+        var storeEntries = PackageAppScanner.BuildIndex();
+        if (steamEntries.Count == 0 && storeEntries.Count == 0)
+        {
+            return fileEntries;
+        }
+
+        return [.. fileEntries, .. steamEntries, .. storeEntries];
     }
 
     private void OpenSearchShortcut(SearchShortcutConfig shortcut, string query)
