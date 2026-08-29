@@ -57,6 +57,7 @@ public sealed class GlobalHotkey : IDisposable
 
     private readonly uint _triggerVk;
     private readonly ModifierKeys _requiredModifiers;
+    private readonly Func<bool>? _isTargetVisible;
 
     // ネイティブ側からコールバックされ続けるため、GC に回収されないよう参照を保持する。
     private readonly LowLevelKeyboardProc _proc;
@@ -66,10 +67,18 @@ public sealed class GlobalHotkey : IDisposable
 
     public event Action? Triggered;
 
-    public GlobalHotkey(HotkeyConfig config)
+    /// <param name="isTargetVisible">
+    /// ポップアップが表示中かどうかを返すコールバック。表示中は修飾キーの一致判定を無視し、
+    /// トリガーキー単体の押下を必ず「閉じる」操作として拾う。GetAsyncKeyState は他プロセスの
+    /// フォアグラウンド化処理（Alt の疑似押下など）の影響で一瞬だけ実際と異なる修飾キー状態を
+    /// 返すことがあり、それによって閉じ用の押下が通常のキー動作として素通りしてしまう
+    /// （例: CapsLock がランチャーを閉じずに OS の通常トグルとして動く）事象を避けるため。
+    /// </param>
+    public GlobalHotkey(HotkeyConfig config, Func<bool>? isTargetVisible = null)
     {
         _triggerVk = ResolveVirtualKey(config.Key);
         _requiredModifiers = ParseModifiers(config.Modifiers);
+        _isTargetVisible = isTargetVisible;
         _proc = HookCallback;
     }
 
@@ -128,7 +137,7 @@ public sealed class GlobalHotkey : IDisposable
                         return (IntPtr)1;
                     }
 
-                    if (CurrentModifiers() == _requiredModifiers)
+                    if (CurrentModifiers() == _requiredModifiers || (_isTargetVisible?.Invoke() ?? false))
                     {
                         _intercepting = true;
                         Triggered?.Invoke();

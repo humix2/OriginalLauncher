@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Forms;
+using System.Windows.Threading;
 using Application = System.Windows.Application;
 
 namespace OriginalLauncher;
@@ -54,12 +55,14 @@ public partial class App : Application
 
     private void InstallHotkey()
     {
-        _hotkey = new GlobalHotkey(_config!.Hotkey);
+        _hotkey = new GlobalHotkey(_config!.Hotkey, () => _mainWindow?.IsVisible ?? false);
         // フックのコールバック内で Show()/SetForegroundWindow 等の重い処理を同期実行すると、
         // Windows のメッセージポンプがネストしてしまい、遅れて届く KEYUP が再入的に配送されたり
         // Window の Activate/Deactivate が競合したりする不具合につながる。
         // Dispatcher に一度乗せ直し、フック呼び出しの外側で実行する。
-        _hotkey.Triggered += () => Dispatcher.BeginInvoke(TogglePopup);
+        // Send 優先度にすることで、他の Normal/Background 優先度の作業（検索結果の描画等）に
+        // 割り込まれてポップアップの反応が遅れるのを防ぐ。
+        _hotkey.Triggered += () => Dispatcher.BeginInvoke(TogglePopup, DispatcherPriority.Send);
         _hotkey.Install();
     }
 

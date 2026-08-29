@@ -13,6 +13,9 @@ namespace OriginalLauncher;
 /// Alt キーの疑似押下（SetForegroundWindow の「直近の入力を伴う」要件を満たす）と、
 /// フォアグラウンドスレッドとの入力キュー共有（AttachThreadInput）を併用し、
 /// <paramref name="whileAttached"/> でのフォーカス設定が確定するまでアタッチを維持する。
+/// ただし Alt の疑似押下自体は SetForegroundWindow の直後に即座に離す。押しっぱなしのまま
+/// <paramref name="whileAttached"/> に入ると WPF がアクセスキーモードに入り、直後のキー入力が
+/// 効かなくなることがあるため。
 /// </summary>
 public static class WindowActivator
 {
@@ -56,13 +59,21 @@ public static class WindowActivator
         {
             SetForegroundWindow(hwnd);
             BringWindowToTop(hwnd);
+        }
+        finally
+        {
+            // Alt は SetForegroundWindow の権限回避にのみ必要。whileAttached（フォーカス設定）の
+            // 間まで押しっぱなしにすると、WPF がアクセスキー（メニューニーモニック）モードに入り、
+            // 直後のキー入力がテキストボックスに届かなくなることがあるため、ここで即座に離す。
+            keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+        }
+
+        try
+        {
             whileAttached();
         }
         finally
         {
-            // 途中で例外が起きても Alt が押しっぱなしの状態で残らないよう必ず離す。
-            keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-
             if (attached)
             {
                 AttachThreadInput(currentThreadId, foregroundThreadId, false);
