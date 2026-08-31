@@ -10,16 +10,23 @@ namespace OriginalLauncher;
 /// 単純な Window.Activate() は Windows のフォアグラウンドロックにより黙って失敗し、
 /// WPF 内部では focus 済みに見えても実際の OS 入力フォーカスは奪えていない、ということが起こる。
 ///
-/// Alt キーの疑似押下（SetForegroundWindow の「直近の入力を伴う」要件を満たす）と、
+/// SetForegroundWindow は「呼び出し元スレッドが直近に入力を受け取っている」ことを条件に
+/// フォアグラウンドロックを回避できるため、そのための「直近の入力」を疑似的に作る。
+/// これに Alt キーを使うと、Alt 単体の押下・解放は Windows 側で
+/// システムメニュー/アクセスキー起動のジェスチャ（WM_SYSCOMMAND/SC_KEYMENU）として特別扱いされ、
+/// 直後のキー入力が奪われたり、解除されるまで他ウィンドウの入力まで止まったりする不具合を招く
+/// （Ctrl 等の他の修飾キーを併用しても、Alt の押下と解放の間に他のキー遷移が挟まらなければ
+/// 同様に扱われるため回避になっていなかった）。
+/// Shift キーはこの特別扱いの対象外（WM_SYSKEYDOWN/UP を生成しない）なので、代わりにこちらを使う。
+/// さらに、SetForegroundWindow を呼ぶ前に完全に押下・解放を終わらせておくことで、
+/// フォーカス変更処理の途中でキーが「押されっぱなし」のまま残るリスクも無くす。
+///
 /// フォアグラウンドスレッドとの入力キュー共有（AttachThreadInput）を併用し、
 /// <paramref name="whileAttached"/> でのフォーカス設定が確定するまでアタッチを維持する。
-/// ただし Alt の疑似押下自体は SetForegroundWindow の直後に即座に離す。押しっぱなしのまま
-/// <paramref name="whileAttached"/> に入ると WPF がアクセスキーモードに入り、直後のキー入力が
-/// 効かなくなることがあるため。
 /// </summary>
 public static class WindowActivator
 {
-    private const byte VK_MENU = 0x12;
+    private const byte VK_SHIFT = 0x10;
     private const uint KEYEVENTF_KEYUP = 0x0002;
 
     [DllImport("user32.dll")]
@@ -54,19 +61,13 @@ public static class WindowActivator
             && foregroundThreadId != currentThreadId
             && AttachThreadInput(currentThreadId, foregroundThreadId, true);
 
-        keybd_event(VK_MENU, 0, 0, UIntPtr.Zero);
-        try
-        {
-            SetForegroundWindow(hwnd);
-            BringWindowToTop(hwnd);
-        }
-        finally
-        {
-            // Alt は SetForegroundWindow の権限回避にのみ必要。whileAttached（フォーカス設定）の
-            // 間まで押しっぱなしにすると、WPF がアクセスキー（メニューニーモニック）モードに入り、
-            // 直後のキー入力がテキストボックスに届かなくなることがあるため、ここで即座に離す。
-            keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-        }
+        // SetForegroundWindow の「直近の入力を伴う」要件を満たすためだけの疑似入力。
+        // ここで完結させ、SetForegroundWindow の呼び出しやフォーカス設定に一切かぶせない。
+        keybd_event(VK_SHIFT, 0, 0, UIntPtr.Zero);
+        keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+        SetForegroundWindow(hwnd);
+        BringWindowToTop(hwnd);
 
         try
         {
