@@ -107,6 +107,10 @@ public partial class MainWindow : Window
         {
             Keyboard.Focus(QueryBox);
             QueryBox.Focus();
+
+            // 直前にIMEをONにしていたアプリからホットキーで切り替えた場合、ONのまま
+            // 引き継がれて検索欄がすぐに使えないことがあるため、表示のたびに強制的にOFFにする。
+            System.Windows.Input.InputMethod.Current!.ImeState = System.Windows.Input.InputMethodState.Off;
         });
         _shownAtUtc = DateTime.UtcNow;
         _foregroundWatcher.Start();
