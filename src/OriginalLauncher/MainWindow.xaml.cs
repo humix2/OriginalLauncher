@@ -269,10 +269,16 @@ public partial class MainWindow : Window
                 return;
             }
 
-            var regex = new Regex(patternText, RegexOptions.IgnoreCase);
+            // パターンには cmigemo 辞書の「炭素=C」「タングステン=W」のような1文字英字のエントリや、
+            // 入力されたローマ字そのもの（"re"/"Re" 等）も常に候補として含まれる。前者は IgnoreCase を
+            // 付けないことである程度抑えられるが、後者は大文字小文字を区別しても "RetroArch" のように
+            // 先頭が "Re" な英字名まで拾ってしまう。大文字始まりの migemo モードは「かな/カナ/漢字への
+            // あいまい変換結果」だけを対象にしたい（ローマ字そのままの部分一致は小文字入力の通常検索で
+            // 拾えるため）ので、表示名に日本語文字（ひらがな/カタカナ/漢字）が含まれるものだけを残す。
+            var regex = new Regex(patternText);
             foreach (var entry in _index)
             {
-                if (regex.IsMatch(entry.DisplayName))
+                if (regex.IsMatch(entry.DisplayName) && ContainsJapaneseCharacter(entry.DisplayName))
                 {
                     matches.Add(entry);
                 }
@@ -327,6 +333,22 @@ public partial class MainWindow : Window
         {
             ResultsList.SelectedIndex = 0;
         }
+    }
+
+    // ひらがな・カタカナ（半角含む）・CJK統合漢字のいずれかを含むかどうか。
+    private static bool ContainsJapaneseCharacter(string text)
+    {
+        foreach (var ch in text)
+        {
+            if ((ch >= '぀' && ch <= 'ヿ')
+                || (ch >= 'ｦ' && ch <= 'ﾝ')
+                || (ch >= '一' && ch <= '鿿'))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static int KindRank(IndexedEntryKind kind) => kind switch
