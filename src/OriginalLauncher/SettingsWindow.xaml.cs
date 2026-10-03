@@ -62,6 +62,7 @@ public partial class SettingsWindow : Window
         ModControlCheck.IsChecked = _config.Hotkey.Modifiers.Contains("Control", StringComparer.OrdinalIgnoreCase);
         ModShiftCheck.IsChecked = _config.Hotkey.Modifiers.Contains("Shift", StringComparer.OrdinalIgnoreCase);
         ModWindowsCheck.IsChecked = _config.Hotkey.Modifiers.Contains("Windows", StringComparer.OrdinalIgnoreCase);
+        SuppressFullscreenCheck.IsChecked = _config.SuppressHotkeyWhenFullscreen;
         MaxResultsBox.Text = _config.MaxResults.ToString();
         ResultFontFamilyBox.Text = _config.ResultFontFamily;
     }
@@ -130,6 +131,7 @@ public partial class SettingsWindow : Window
 
         _config.Hotkey.Key = hotkeyKey;
         _config.Hotkey.Modifiers = BuildModifierList();
+        _config.SuppressHotkeyWhenFullscreen = SuppressFullscreenCheck.IsChecked == true;
         _config.MaxResults = maxResults;
         _config.ResultFontFamily = resultFontFamily;
 

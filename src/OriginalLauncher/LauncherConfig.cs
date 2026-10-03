@@ -25,6 +25,10 @@ public sealed class LauncherConfig
     // ポップアップの起動キー。既定は CapsLock（修飾キーなし）。
     public HotkeyConfig Hotkey { get; set; } = new();
 
+    // true の場合、フルスクリーンで実行中のアプリ（ゲームなど）がフォアグラウンドのとき
+    // 起動キーを無視する（キー入力はそのままアプリに渡る）。
+    public bool SuppressHotkeyWhenFullscreen { get; set; } = false;
+
     // 検索結果の最大表示件数。
     public int MaxResults { get; set; } = 20;
 

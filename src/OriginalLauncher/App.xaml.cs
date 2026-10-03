@@ -55,7 +55,10 @@ public partial class App : Application
 
     private void InstallHotkey()
     {
-        _hotkey = new GlobalHotkey(_config!.Hotkey, () => _mainWindow?.IsVisible ?? false);
+        _hotkey = new GlobalHotkey(
+            _config!.Hotkey,
+            () => _mainWindow?.IsVisible ?? false,
+            () => _config.SuppressHotkeyWhenFullscreen && ForegroundWindowInfo.IsForegroundWindowFullscreen());
         // フックのコールバック内で Show()/SetForegroundWindow 等の重い処理を同期実行すると、
         // Windows のメッセージポンプがネストしてしまい、遅れて届く KEYUP が再入的に配送されたり
         // Window の Activate/Deactivate が競合したりする不具合につながる。

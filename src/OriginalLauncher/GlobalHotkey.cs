@@ -58,6 +58,7 @@ public sealed class GlobalHotkey : IDisposable
     private readonly uint _triggerVk;
     private readonly ModifierKeys _requiredModifiers;
     private readonly Func<bool>? _isTargetVisible;
+    private readonly Func<bool>? _isSuppressed;
 
     // ネイティブ側からコールバックされ続けるため、GC に回収されないよう参照を保持する。
     private readonly LowLevelKeyboardProc _proc;
@@ -74,11 +75,17 @@ public sealed class GlobalHotkey : IDisposable
     /// 返すことがあり、それによって閉じ用の押下が通常のキー動作として素通りしてしまう
     /// （例: CapsLock がランチャーを閉じずに OS の通常トグルとして動く）事象を避けるため。
     /// </param>
-    public GlobalHotkey(HotkeyConfig config, Func<bool>? isTargetVisible = null)
+    /// <param name="isSuppressed">
+    /// true を返す間はホットキーを無視し、キー入力をそのまま素通しするコールバック
+    /// （例: フルスクリーンのゲームがフォアグラウンドのとき）。ポップアップが表示中の場合は
+    /// このコールバックに関わらず「閉じる」操作を優先する。
+    /// </param>
+    public GlobalHotkey(HotkeyConfig config, Func<bool>? isTargetVisible = null, Func<bool>? isSuppressed = null)
     {
         _triggerVk = ResolveVirtualKey(config.Key);
         _requiredModifiers = ParseModifiers(config.Modifiers);
         _isTargetVisible = isTargetVisible;
+        _isSuppressed = isSuppressed;
         _proc = HookCallback;
     }
 
@@ -137,14 +144,18 @@ public sealed class GlobalHotkey : IDisposable
                         return (IntPtr)1;
                     }
 
-                    if (CurrentModifiers() == _requiredModifiers || (_isTargetVisible?.Invoke() ?? false))
+                    var targetVisible = _isTargetVisible?.Invoke() ?? false;
+                    var suppressed = !targetVisible && (_isSuppressed?.Invoke() ?? false);
+
+                    if (!suppressed && (CurrentModifiers() == _requiredModifiers || targetVisible))
                     {
                         _intercepting = true;
                         Triggered?.Invoke();
                         return (IntPtr)1;
                     }
 
-                    // 必要な修飾キーが揃っていない場合は通常のキー入力として素通しする。
+                    // 必要な修飾キーが揃っていない場合、あるいは抑制条件に該当する場合は
+                    // 通常のキー入力として素通しする。
                 }
                 else if (message is WM_KEYUP or WM_SYSKEYUP)
                 {

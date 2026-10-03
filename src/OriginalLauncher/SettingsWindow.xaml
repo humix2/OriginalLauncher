@@ -97,6 +97,8 @@
                 </StackPanel>
                 <TextBlock Text="「CapsLock」のほか Space, F13, L のようなキー名を指定できます。修飾キーが揃わない場合、そのキー自体の通常入力は妨げません。"
                            Foreground="{StaticResource InkFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0" />
+                <CheckBox x:Name="SuppressFullscreenCheck" Content="フルスクリーンのアプリ（ゲームなど）実行中は起動キーを無効化する"
+                          Margin="0,10,0,0" />
 
                 <TextBlock Text="インデックス対象ルート" Style="{StaticResource SectionHeader}" />
                 <DataGrid x:Name="RootsGrid" Height="160" ItemsSource="{Binding Roots}">
