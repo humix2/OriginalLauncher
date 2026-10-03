@@ -289,18 +289,22 @@ public partial class MainWindow : Window
             }
         }
 
-        // 表示名+種別+ドライブが同じもの（別ルートに同名のショートカット/フォルダがあるケース）は
+        // 表示名+種別グループ+ドライブが同じもの（別ルートに同名のショートカット/フォルダがあるケース、
+        // 同じアプリが実行ファイル・ショートカット・ストアアプリ等複数の形で登録されているケース）は
         // グループ内で最も使われている/最近使ったものを代表として1件にまとめる。
         // 使用回数が多いもの、同数なら最近使ったものを優先する。未使用のものは既存の走査順のまま後ろに残る。
-        // 種別 (Kind) は .lnk と .exe を区別するため、名前が同じでも別項目として扱われる。
+        // 種別グループ (AppGroupKind) は、起動対象を表す種別 (Executable/Shortcut/SteamGame/StoreApp) を
+        // 同じグループとして扱い、名前が同じなら統合する。Folder だけは別グループとし、たまたま名前が
+        // 同じフォルダとアプリを誤って統合しないようにする。
         // ドライブを含めるのは、C:\ と D:\ に同名の別ファイルがある場合を誤って統合しないため。
         // 使用回数・最終使用日時が同率の場合は、実行ファイル (.exe) > ショートカット (.lnk) > フォルダ
         // の優先順位にする。基本的に実行対象を示した方が使いやすいため。
         var ranked = matches
-            .GroupBy(entry => (Name: entry.DisplayName.ToLowerInvariant(), entry.Kind, Drive: Path.GetPathRoot(entry.FullPath)))
+            .GroupBy(entry => (Name: entry.DisplayName.ToLowerInvariant(), GroupKind: AppGroupKind(entry.Kind), Drive: Path.GetPathRoot(entry.FullPath)))
             .Select(group => group
                 .OrderByDescending(entry => _usage.GetCount(entry.FullPath))
                 .ThenByDescending(entry => _usage.GetLastUsedUtc(entry.FullPath))
+                .ThenBy(entry => KindRank(entry.Kind))
                 .First())
             .OrderByDescending(entry => _usage.GetCount(entry.FullPath))
             .ThenByDescending(entry => _usage.GetLastUsedUtc(entry.FullPath))
@@ -326,6 +330,15 @@ public partial class MainWindow : Window
         IndexedEntryKind.Shortcut => 1,
         IndexedEntryKind.Folder => 2,
         _ => 3,
+    };
+
+    // 名前が同じ場合に統合してよい種別グループ。起動対象を表す種別はまとめて1グループとし、
+    // 同名なら KindRank に従って代表（実行ファイル/ストアアプリ > ショートカット）を残す。
+    // Folder は無関係なアプリと誤って統合しないよう独立したグループにする。
+    private static string AppGroupKind(IndexedEntryKind kind) => kind switch
+    {
+        IndexedEntryKind.Executable or IndexedEntryKind.Shortcut or IndexedEntryKind.SteamGame or IndexedEntryKind.StoreApp => "App",
+        _ => kind.ToString(),
     };
 
     private void ResultsList_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
